@@ -352,6 +352,11 @@ export class LobbyMenu {
     ).join('')
     
     this.checkGameReady()
+
+    // Auto-start if lobby status is playing and menu still visible
+    if (lobby.status === 'playing') {
+      this.startGame()
+    }
   }
 
   private checkGameReady() {

@@ -27,6 +27,7 @@ export class NetworkManager {
   public playerId: number | null = null
   public playerRole: 'shooter' | 'hauler' | null = null
   public isConnected: boolean = false
+  private playerName: string = ''
   
   // Event handlers
   private onStateUpdate: ((entities: any[]) => void) | null = null
@@ -92,6 +93,10 @@ export class NetworkManager {
         
       case 'LOBBY_UPDATE':
         this.currentLobby = message.lobby
+        if (this.playerId === null && this.playerName) {
+          const me = message.lobby.players.find((p: any) => p.name === this.playerName)
+          if (me) this.playerId = me.id
+        }
         this.onLobbyUpdate?.(message.lobby)
         break
         
@@ -114,6 +119,7 @@ export class NetworkManager {
     }
 
     this.ws.send(JSON.stringify(message))
+    this.playerName = playerName
     return true
   }
 
@@ -141,6 +147,9 @@ export class NetworkManager {
     yaw: number
     fire: boolean
     tractor?: boolean // For hauler ships
+    x: number
+    y: number
+    z: number
   }) {
     if (!this.isConnected || !this.ws) return
 

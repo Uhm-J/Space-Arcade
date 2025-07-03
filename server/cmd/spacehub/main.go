@@ -39,6 +39,9 @@ type InputMessage struct {
 	Yaw      float64     `json:"yaw"`
 	Fire     bool        `json:"fire"`
 	Tractor  bool        `json:"tractor,omitempty"`
+	X        float64     `json:"x"`
+	Y        float64     `json:"y"`
+	Z        float64     `json:"z"`
 }
 
 type RoleSelectMessage struct {
@@ -82,6 +85,9 @@ type Entity struct {
 	VY   float64 `json:"vy"`
 	VZ   float64 `json:"vz"`
 	HP   int     `json:"hp,omitempty"`
+	Role string  `json:"role,omitempty"`
+	Pitch float64 `json:"pitch,omitempty"`
+	Yaw   float64 `json:"yaw,omitempty"`
 }
 
 // WebSocket upgrader
@@ -182,6 +188,19 @@ func (h *Hub) addToLobby(client *Client, lobby string, playerName string) {
 	if _, exists := h.gameState[lobby]; !exists {
 		h.gameState[lobby] = h.createInitialGameState()
 	}
+	
+	// Add player entity to game state
+	h.gameState[lobby] = append(h.gameState[lobby], Entity{
+		ID:   client.id,
+		Type: "player",
+		X:    0,
+		Y:    0,
+		Z:    0,
+		VX:   0,
+		VY:   0,
+		VZ:   0,
+		Role: client.role,
+	})
 	
 	log.Printf("Client %d (%s) joined lobby %s", client.id, client.name, lobby)
 	h.broadcastLobbyUpdate(lobby)
@@ -343,6 +362,15 @@ func (h *Hub) selectRole(client *Client, role string) {
 	}
 	
 	client.role = role
+	// Update entity role in game state
+	entities := h.gameState[client.lobby]
+	for i := range entities {
+		if entities[i].ID == client.id && entities[i].Type == "player" {
+			entities[i].Role = role
+			h.gameState[client.lobby][i] = entities[i]
+			break
+		}
+	}
 	log.Printf("Client %d (%s) selected role: %s", client.id, client.name, role)
 	h.broadcastLobbyUpdate(client.lobby)
 }
@@ -478,9 +506,22 @@ func (c *Client) handleMessage(data []byte) {
 			return
 		}
 		c.lastSeq = msg.Seq
-		// TODO: Process input and update client position (Milestone 4)
-		log.Printf("Client %d (%s) input: throttle=%.2f, pitch=%.2f, yaw=%.2f, fire=%v", 
-			c.id, c.role, msg.Throttle, msg.Pitch, msg.Yaw, msg.Fire)
+		// Update player entity transform
+		entities := c.hub.gameState[c.lobby]
+		for i := range entities {
+			if entities[i].ID == c.id && entities[i].Type == "player" {
+				entities[i].X = msg.X
+				entities[i].Y = msg.Y
+				entities[i].Z = msg.Z
+				entities[i].Pitch = msg.Pitch
+				entities[i].Yaw = msg.Yaw
+				c.hub.gameState[c.lobby][i] = entities[i]
+				break
+			}
+		}
+		// TODO: Process actions like firing, tractor, etc.
+		log.Printf("Client %d (%s) pos=(%.1f,%.1f,%.1f) yaw=%.2f fire=%v", 
+			c.id, c.role, msg.X, msg.Y, msg.Z, msg.Yaw, msg.Fire)
 	}
 }
 

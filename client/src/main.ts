@@ -22,7 +22,6 @@ const multiplayerManager = new MultiplayerManager(networkManager)
 // Initialize engine but don't start game yet
 initEngine()
 createSpaceStation()
-createAsteroidField()
 createCrosshair()
 updateUI()
 
