@@ -11,13 +11,32 @@ export let currentShipConfig: any = null
 
 export function createSpaceship(role?: 'shooter' | 'hauler') {
   if (role) {
-    // Create ship based on role
     currentShipConfig = getShipConfig(role)
-    const ship = createShipGeometry(role)
-    ship.position.set(0, 0, 0)
-    scene.add(ship)
-    spaceships.push(ship)
-    console.log(`🚀 Created ${role} ship`)
+    const loader = new GLTFLoader()
+    loader.load('/models/spaceship/ship1.glb', (gltf) => {
+      const ship = gltf.scene
+      ship.position.set(0, 0, 0)
+      ship.scale.setScalar(currentShipConfig.scale)
+      ship.traverse((child) => {
+        if ((child as THREE.Mesh).isMesh) {
+          child.castShadow = true
+          child.receiveShadow = true
+          const mat = (child as THREE.Mesh).material as THREE.MeshPhongMaterial
+          if (mat) {
+            mat.color = new THREE.Color(currentShipConfig.color)
+          }
+        }
+      })
+      scene.add(ship)
+      spaceships.push(ship)
+      console.log(`🚀 Created ${role} ship`)  
+    }, undefined, (err) => {
+      console.error('Failed to load glb, falling back', err)
+      const ship = createShipGeometry(role)
+      ship.position.set(0,0,0)
+      scene.add(ship)
+      spaceships.push(ship)
+    })
   } else {
     // Fallback to default behavior for single player
     const loader = new GLTFLoader()

@@ -50,7 +50,16 @@ export class MultiplayerManager {
     if (!ship) {
       // Create ship mesh for remote player
       const role = playerEntity.role || 'shooter'
-      ship = createShipGeometry(role)
+      ship = await new Promise<THREE.Object3D>((resolve) => {
+        const loader = new (await import('three/examples/jsm/loaders/GLTFLoader')).GLTFLoader()
+        loader.load('/models/spaceship/ship1.glb', (gltf: any) => {
+          const obj = gltf.scene
+          obj.scale.setScalar(role === 'shooter' ? 4 : 6)
+          resolve(obj)
+        }, undefined, () => {
+          resolve(createShipGeometry(role))
+        })
+      }) as THREE.Mesh
       ship.visible = true
       // Slightly dim remote player ships
       ;(ship.material as any).opacity = 0.8
