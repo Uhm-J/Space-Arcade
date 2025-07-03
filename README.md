@@ -230,28 +230,34 @@ The Space Arcade MVP has **evolved into an immersive world**! Here's what you ca
 
 2. **Server (Go WebSocket Hub)**: Running on http://localhost:8080
    - ✅ WebSocket endpoint at `/ws`
-   - ✅ Client registration and lobby management
-   - ✅ JSON message handling (JOIN, INPUT, STATE)
+   - ✅ **Safe lobby system** with private room codes
+   - ✅ **Role-based multiplayer** (Shooter vs Hauler)
+   - ✅ JSON message handling (JOIN, INPUT, STATE, ROLE_SELECT, LOBBY_UPDATE)
    - ✅ 15Hz state broadcasts to connected clients
    - ✅ Health check endpoint at `/health`
+   - ✅ **Auto-reconnection** and graceful disconnect handling
 
 ### 🚀 Quick Start
 
 ```bash
-# Terminal 1: Start the client
-cd client && npm run dev
-
-# Terminal 2: Start the server  
+# Terminal 1: Start the server
 cd server && go run ./cmd/spacehub
 
+# Terminal 2: Start the client
+cd client && npm run dev
+
 # Open browser to http://localhost:5173
+# Use the lobby menu to create/join multiplayer games!
 ```
+
+**🎮 For multiplayer instructions, see [MULTIPLAYER_GUIDE.md](MULTIPLAYER_GUIDE.md)**
 
 ### 🎯 Next Steps
 
-- **Milestone 1**: Add proper flight controls and asteroid breaking
-- **Milestone 2**: Implement hauler ship and upgrade system
-- **Milestone 4**: Add client-server multiplayer sync
+- **Milestone 2**: Implement hauler ship tractor beam mechanics and upgrade system
+- **Milestone 4**: Add authoritative server physics and lag compensation  
+- **Visual multiplayer**: Render other players' ships in real-time
+- **Enhanced cooperation**: Shared cargo holds and joint mining bonuses
 
 ---
 

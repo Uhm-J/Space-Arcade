@@ -17,15 +17,18 @@ import (
 type MessageType string
 
 const (
-	MsgJoin  MessageType = "JOIN"
-	MsgInput MessageType = "INPUT"
-	MsgState MessageType = "STATE"
+	MsgJoin        MessageType = "JOIN"
+	MsgInput       MessageType = "INPUT"
+	MsgState       MessageType = "STATE"
+	MsgRoleSelect  MessageType = "ROLE_SELECT"
+	MsgLobbyUpdate MessageType = "LOBBY_UPDATE"
 )
 
 // Client messages (Client → Server)
 type JoinMessage struct {
-	Type  MessageType `json:"type"`
-	Lobby string      `json:"lobby"`
+	Type       MessageType `json:"type"`
+	Lobby      string      `json:"lobby"`
+	PlayerName string      `json:"playerName"`
 }
 
 type InputMessage struct {
@@ -33,7 +36,14 @@ type InputMessage struct {
 	Seq      int         `json:"seq"`
 	Throttle float64     `json:"throttle"`
 	Pitch    float64     `json:"pitch"`
+	Yaw      float64     `json:"yaw"`
 	Fire     bool        `json:"fire"`
+	Tractor  bool        `json:"tractor,omitempty"`
+}
+
+type RoleSelectMessage struct {
+	Type MessageType `json:"type"`
+	Role string      `json:"role"`
 }
 
 // Server messages (Server → Client)
@@ -41,6 +51,25 @@ type StateMessage struct {
 	Type     MessageType `json:"type"`
 	Seq      int         `json:"seq"`
 	Entities []Entity    `json:"entities"`
+}
+
+type LobbyUpdateMessage struct {
+	Type  MessageType `json:"type"`
+	Lobby LobbyInfo   `json:"lobby"`
+}
+
+type LobbyInfo struct {
+	Code       string   `json:"code"`
+	Players    []Player `json:"players"`
+	MaxPlayers int      `json:"maxPlayers"`
+	Status     string   `json:"status"`
+}
+
+type Player struct {
+	ID        int    `json:"id"`
+	Name      string `json:"name"`
+	Role      string `json:"role"`
+	Connected bool   `json:"connected"`
 }
 
 type Entity struct {
@@ -64,12 +93,16 @@ var upgrader = websocket.Upgrader{
 
 // Client represents a connected player
 type Client struct {
-	conn   *websocket.Conn
-	lobby  string
-	send   chan []byte
-	hub    *Hub
-	id     int
-	lastSeq int
+	conn     *websocket.Conn
+	lobby    string
+	send     chan []byte
+	hub      *Hub
+	id       int
+	lastSeq  int
+	name     string
+	role     string // "shooter", "hauler", or ""
+	position [3]float64
+	velocity [3]float64
 }
 
 // Hub maintains active clients and broadcasts messages
@@ -133,8 +166,16 @@ func (h *Hub) run() {
 	}
 }
 
-func (h *Hub) addToLobby(client *Client, lobby string) {
+func (h *Hub) addToLobby(client *Client, lobby string, playerName string) {
 	client.lobby = lobby
+	client.name = playerName
+	
+	// Check if lobby is full
+	if len(h.lobbies[lobby]) >= 2 {
+		h.sendError(client, "Lobby is full")
+		return
+	}
+	
 	h.lobbies[lobby] = append(h.lobbies[lobby], client)
 	
 	// Initialize lobby state if needed
@@ -142,7 +183,8 @@ func (h *Hub) addToLobby(client *Client, lobby string) {
 		h.gameState[lobby] = h.createInitialGameState()
 	}
 	
-	log.Printf("Client %d joined lobby %s", client.id, lobby)
+	log.Printf("Client %d (%s) joined lobby %s", client.id, client.name, lobby)
+	h.broadcastLobbyUpdate(lobby)
 }
 
 func (h *Hub) removeFromLobby(client *Client) {
@@ -150,18 +192,22 @@ func (h *Hub) removeFromLobby(client *Client) {
 		return
 	}
 	
-	clients := h.lobbies[client.lobby]
+	lobby := client.lobby
+	clients := h.lobbies[lobby]
 	for i, c := range clients {
 		if c == client {
-			h.lobbies[client.lobby] = append(clients[:i], clients[i+1:]...)
+			h.lobbies[lobby] = append(clients[:i], clients[i+1:]...)
 			break
 		}
 	}
 	
-	// Clean up empty lobbies
-	if len(h.lobbies[client.lobby]) == 0 {
-		delete(h.lobbies, client.lobby)
-		delete(h.gameState, client.lobby)
+	// Notify remaining players
+	if len(h.lobbies[lobby]) > 0 {
+		h.broadcastLobbyUpdate(lobby)
+	} else {
+		// Clean up empty lobbies
+		delete(h.lobbies, lobby)
+		delete(h.gameState, lobby)
 	}
 }
 
@@ -212,6 +258,111 @@ func (h *Hub) broadcastGameState() {
 				// Client send channel is full, skip
 			}
 		}
+	}
+}
+
+func (h *Hub) broadcastLobbyUpdate(lobbyCode string) {
+	clients := h.lobbies[lobbyCode]
+	if len(clients) == 0 {
+		return
+	}
+	
+	// Build lobby info
+	players := make([]Player, len(clients))
+	for i, client := range clients {
+		players[i] = Player{
+			ID:        client.id,
+			Name:      client.name,
+			Role:      client.role,
+			Connected: true,
+		}
+	}
+	
+	status := "waiting"
+	if len(clients) == 2 {
+		hasShooter := false
+		hasHauler := false
+		for _, client := range clients {
+			if client.role == "shooter" {
+				hasShooter = true
+			} else if client.role == "hauler" {
+				hasHauler = true
+			}
+		}
+		if hasShooter && hasHauler {
+			status = "playing"
+		}
+	}
+	
+	lobbyInfo := LobbyInfo{
+		Code:       lobbyCode,
+		Players:    players,
+		MaxPlayers: 2,
+		Status:     status,
+	}
+	
+	message := LobbyUpdateMessage{
+		Type:  MsgLobbyUpdate,
+		Lobby: lobbyInfo,
+	}
+	
+	data, err := json.Marshal(message)
+	if err != nil {
+		log.Printf("Error marshaling lobby update: %v", err)
+		return
+	}
+	
+	// Send to all clients in this lobby
+	for _, client := range clients {
+		select {
+		case client.send <- data:
+		default:
+			// Client send channel is full, skip
+		}
+	}
+}
+
+func (h *Hub) selectRole(client *Client, role string) {
+	if client.lobby == "" {
+		h.sendError(client, "Not in a lobby")
+		return
+	}
+	
+	// Validate role
+	if role != "shooter" && role != "hauler" {
+		h.sendError(client, "Invalid role")
+		return
+	}
+	
+	// Check if role is already taken
+	for _, c := range h.lobbies[client.lobby] {
+		if c != client && c.role == role {
+			h.sendError(client, "Role already taken")
+			return
+		}
+	}
+	
+	client.role = role
+	log.Printf("Client %d (%s) selected role: %s", client.id, client.name, role)
+	h.broadcastLobbyUpdate(client.lobby)
+}
+
+func (h *Hub) sendError(client *Client, message string) {
+	errorMsg := map[string]interface{}{
+		"type":  "ERROR",
+		"error": message,
+	}
+	
+	data, err := json.Marshal(errorMsg)
+	if err != nil {
+		log.Printf("Error marshaling error message: %v", err)
+		return
+	}
+	
+	select {
+	case client.send <- data:
+	default:
+		// Client send channel is full, skip
 	}
 }
 
@@ -310,7 +461,15 @@ func (c *Client) handleMessage(data []byte) {
 			log.Printf("Error parsing JOIN message: %v", err)
 			return
 		}
-		c.hub.addToLobby(c, msg.Lobby)
+		c.hub.addToLobby(c, msg.Lobby, msg.PlayerName)
+		
+	case MsgRoleSelect:
+		var msg RoleSelectMessage
+		if err := json.Unmarshal(data, &msg); err != nil {
+			log.Printf("Error parsing ROLE_SELECT message: %v", err)
+			return
+		}
+		c.hub.selectRole(c, msg.Role)
 		
 	case MsgInput:
 		var msg InputMessage
@@ -319,9 +478,9 @@ func (c *Client) handleMessage(data []byte) {
 			return
 		}
 		c.lastSeq = msg.Seq
-		// TODO: Process input (Milestone 4)
-		log.Printf("Client %d input: throttle=%.2f, pitch=%.2f, fire=%v", 
-			c.id, msg.Throttle, msg.Pitch, msg.Fire)
+		// TODO: Process input and update client position (Milestone 4)
+		log.Printf("Client %d (%s) input: throttle=%.2f, pitch=%.2f, yaw=%.2f, fire=%v", 
+			c.id, c.role, msg.Throttle, msg.Pitch, msg.Yaw, msg.Fire)
 	}
 }
 

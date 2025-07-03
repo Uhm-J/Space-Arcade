@@ -3,39 +3,52 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { scene } from '../core/engine'
 import { shipAcceleration, shipMaxSpeed, shipDamping } from '../config/constants'
 import { inputState } from '../controls/input'
+import { createShipGeometry, getShipConfig } from './shipTypes'
 
 export const spaceships: THREE.Object3D[] = []
 export let shipVelocity = new THREE.Vector3()
+export let currentShipConfig: any = null
 
-export function createSpaceship() {
-  const loader = new GLTFLoader()
-  loader.load(
-    '/models/spaceship/ship1.glb',
-    (gltf) => {
-      const ship = gltf.scene
-      ship.position.set(0, 0, 0)
-      ship.scale.set(5, 5, 5)
-      ship.traverse((child) => {
-        if ((child as THREE.Mesh).isMesh) {
-          child.castShadow = true
-          child.receiveShadow = true
-        }
-      })
-      scene.add(ship)
-      spaceships.push(ship)
-    },
-    undefined,
-    (error) => {
-      console.error('Error loading ship model:', error)
-      const geometry = new THREE.BoxGeometry(2, 1, 4)
-      const material = new THREE.MeshPhongMaterial({ color: 0x00ff00 })
-      const fallback = new THREE.Mesh(geometry, material)
-      fallback.position.set(0, 0, 0)
-      fallback.castShadow = true
-      scene.add(fallback)
-      spaceships.push(fallback)
-    }
-  )
+export function createSpaceship(role?: 'shooter' | 'hauler') {
+  if (role) {
+    // Create ship based on role
+    currentShipConfig = getShipConfig(role)
+    const ship = createShipGeometry(role)
+    ship.position.set(0, 0, 0)
+    scene.add(ship)
+    spaceships.push(ship)
+    console.log(`🚀 Created ${role} ship`)
+  } else {
+    // Fallback to default behavior for single player
+    const loader = new GLTFLoader()
+    loader.load(
+      '/models/spaceship/ship1.glb',
+      (gltf) => {
+        const ship = gltf.scene
+        ship.position.set(0, 0, 0)
+        ship.scale.set(5, 5, 5)
+        ship.traverse((child) => {
+          if ((child as THREE.Mesh).isMesh) {
+            child.castShadow = true
+            child.receiveShadow = true
+          }
+        })
+        scene.add(ship)
+        spaceships.push(ship)
+      },
+      undefined,
+      (error) => {
+        console.error('Error loading ship model:', error)
+        const geometry = new THREE.BoxGeometry(2, 1, 4)
+        const material = new THREE.MeshPhongMaterial({ color: 0x00ff00 })
+        const fallback = new THREE.Mesh(geometry, material)
+        fallback.position.set(0, 0, 0)
+        fallback.castShadow = true
+        scene.add(fallback)
+        spaceships.push(fallback)
+      }
+    )
+  }
 }
 
 export function updateSpaceship(dt: number) {
@@ -61,11 +74,15 @@ export function updateSpaceship(dt: number) {
   if (accel.lengthSq() > 0) {
     accel.normalize()
     accel.applyQuaternion(ship.quaternion)
-    accel.multiplyScalar(shipAcceleration * dt)
+    const acceleration = currentShipConfig ? currentShipConfig.acceleration : shipAcceleration
+    accel.multiplyScalar(acceleration * dt)
     shipVelocity.add(accel)
   }
 
-  if (shipVelocity.length() > shipMaxSpeed) shipVelocity.setLength(shipMaxSpeed)
-  shipVelocity.multiplyScalar(shipDamping)
+  const maxSpeed = currentShipConfig ? currentShipConfig.maxSpeed : shipMaxSpeed
+  const damping = currentShipConfig ? currentShipConfig.damping : shipDamping
+  
+  if (shipVelocity.length() > maxSpeed) shipVelocity.setLength(maxSpeed)
+  shipVelocity.multiplyScalar(damping)
   ship.position.add(shipVelocity.clone().multiplyScalar(dt))
 }

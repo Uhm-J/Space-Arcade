@@ -10,6 +10,8 @@ export interface InputState {
   moveDown: boolean
   shipRotationX: number
   shipRotationY: number
+  fire: boolean
+  tractor: boolean
 }
 
 export const inputState: InputState = {
@@ -21,11 +23,13 @@ export const inputState: InputState = {
   moveDown: false,
   shipRotationX: 0,
   shipRotationY: 0,
+  fire: false,
+  tractor: false,
 }
 
 export let isPointerLocked = false
 
-export function setupInput(shootCallback: () => void) {
+export function setupInput(shootCallback: () => void, networkManager?: any) {
   window.addEventListener('mousedown', (event) => {
     if (event.button === 0) {
       // Try to lock pointer on first click
@@ -33,7 +37,14 @@ export function setupInput(shootCallback: () => void) {
         renderer.domElement.requestPointerLock()
         return
       }
+      inputState.fire = true
       shootCallback()
+    }
+  })
+
+  window.addEventListener('mouseup', (event) => {
+    if (event.button === 0) {
+      inputState.fire = false
     }
   })
 
@@ -66,6 +77,9 @@ export function setupInput(shootCallback: () => void) {
       case 'ControlRight':
         inputState.moveDown = true
         break
+      case 'KeyF':
+        inputState.tractor = true // Tractor beam for hauler ships
+        break
       case 'Escape':
         if (isPointerLocked) document.exitPointerLock()
         break
@@ -92,6 +106,9 @@ export function setupInput(shootCallback: () => void) {
       case 'ControlLeft':
       case 'ControlRight':
         inputState.moveDown = false
+        break
+      case 'KeyF':
+        inputState.tractor = false
         break
     }
   })
