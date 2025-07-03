@@ -7,7 +7,7 @@ import { scene } from '../core/engine'
 
 export class MultiplayerManager {
   private networkManager: NetworkManager
-  private otherPlayers: Map<number, THREE.Mesh> = new Map()
+  private otherPlayers: Map<number, THREE.Object3D> = new Map()
   private remoteAsteroids: Map<number, THREE.Mesh> = new Map()
   private lastInputSent: number = 0
   private inputSendRate: number = 60 // Send input 60 times per second
@@ -50,16 +50,8 @@ export class MultiplayerManager {
     if (!ship) {
       // Create ship mesh for remote player
       const role = playerEntity.role || 'shooter'
-      ship = await new Promise<THREE.Object3D>((resolve) => {
-        const loader = new (await import('three/examples/jsm/loaders/GLTFLoader')).GLTFLoader()
-        loader.load('/models/spaceship/ship1.glb', (gltf: any) => {
-          const obj = gltf.scene
-          obj.scale.setScalar(role === 'shooter' ? 4 : 6)
-          resolve(obj)
-        }, undefined, () => {
-          resolve(createShipGeometry(role))
-        })
-      }) as THREE.Mesh
+      ship = createShipGeometry(role)
+      ship.scale.setScalar(role === 'shooter' ? 4 : 6)
       ship.visible = true
       // Slightly dim remote player ships
       ;(ship.material as any).opacity = 0.8
